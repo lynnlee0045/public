@@ -1,0 +1,28 @@
+/**
+ * Created by Administrator on 2015/4/13.
+ */
+define([
+  'dojo/_base/declare',
+  'bplz/TaskManager/_BaseTask'
+],function(declare,BaseTask){
+  return declare([BaseTask],{
+    constructor:function(url){
+      this.url = url;
+      this.warningQueryApiName = "/api/ForecastAndWarning/";
+    },
+    GetForecastWarningInfo:function(params){
+      return this.getRestRequestDeferred(params,this.warningQueryApiName+"GetWarningInfo");
+    },
+    GetForecastWarningInfoByRoleId:function(params){
+      return this.getRestRequestDeferred(params,this.warningQueryApiName+"GetWarningInfoByRoleId");
+    },
+    GetForecastWarningInfoByCityCode:function(params){
+      return this.getRestRequestDeferred(params,this.warningQueryApiName+"GetWarningInfoOfCity");
+    },
+
+    GetWarningInfoByDate:function(params){
+      return this.getRestRequestDeferred(params,this.warningQueryApiName+"GetWarningInfoByDate");
+    }
+
+  });
+});

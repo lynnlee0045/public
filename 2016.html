@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<!-- saved from url=(0049)http://123.232.109.172:58081/sourceapp/image.html -->
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>济南市空气质量预报预警系统</title>
+    <link href="http://123.232.109.172:58081/sourceapp/favicon.ico" rel="Shortcut Icon">
+    <link rel="stylesheet" href="base.css" type="text/css">
+
+</head>
+<body>
+<div id="main-page">
+    <div id="header">
+        <span class="title">
+            <a href="2015.html"><div class="arrow-left"></div></a>
+            2016年年度PM<sub>2.5</sub>源解析结果
+            <a href="2017.html"><div class="arrow-right"></div></a>
+        </span>
+    </div>
+    <div id="content">
+        <div id="left">
+            <div style="height:50%;line-height:100px;padding-top: 150px;">
+                <div>
+                    PM<sub>2.5</sub>
+                </div>
+
+            </div>
+            <div style="height:50%;line-height:100px;padding-top: 150px;">
+                <div>
+                    说明
+                </div>
+
+            </div>
+        </div>
+        <div id="right">
+            <div class="chartContainer" style="border-right: 1px #52bfcf solid;">
+                <div class="chartTitle">
+                    全年解析结果
+                </div>
+                <img class="chart" src="./2016/1.png">
+                <div class="chartDescription">
+                    全年PM<sub>2.5</sub>来源<br>
+                    1、燃煤31%<br>
+                    2、机动车26%<br>
+                    3、工业生产17%<br>
+                    4、扬尘16%<br>
+                    5、其他10%
+                </div>
+            </div>
+
+            <div class="chartContainer" style="border-right: 1px #52bfcf solid;">
+                <div class="chartTitle">
+                    冬季解析结果
+                </div>
+                <img class="chart" src="./2016/2.png">
+                <div class="chartDescription">
+                    冬季PM<sub>2.5</sub>来源<br>
+                    1、燃煤38%<br>
+                    2、机动车24%<br>
+                    3、工业生产14%<br>
+                    4、扬尘12%<br>
+                    5、其他12%
+                </div>
+            </div>
+
+            <div class="chartContainer" style="border-right: 1px #52bfcf solid;">
+                <div class="chartTitle">
+                    夏秋季解析结果
+                </div>
+                <img class="chart" src="./2016/3.png">
+                <div class="chartDescription">
+                    夏秋季PM<sub>2.5</sub>来源<br>
+                    1、燃煤29%<br>
+                    2、机动车28%<br>
+                    3、工业生产18%<br>
+                    4、扬尘17%<br>
+                    5、其他8%
+                </div>
+            </div>
+
+            <div class="chartContainer">
+                <div class="chartTitle">
+                    春季解析结果
+                </div>
+                <img class="chart" src="./2016/4.png">
+                <div class="chartDescription">
+                    春季PM<sub>2.5</sub>来源<br>
+                    1、燃煤29%<br>
+                    2、机动车22.2%<br>
+                    3、工业生产23.6%<br>
+                    4、扬尘20%<br>
+                    5、其他5.2%
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+</div>
+<script type="text/javascript">
+    var charts = document.getElementsByClassName('chart');
+    for (var i = 0; i < charts.length; i++) {
+        charts[i].onclick = function (event) {
+            var target = event.currentTarget.nextElementSibling;
+            target.style.visibility = 'hidden';
+            setTimeout(function () {
+                target.style.visibility = 'visible';
+            }, 50);
+
+        };
+        /*charts[i].onmouseover=function(event){
+          event.currentTarget.nextElementSibling.style.display='block';
+        };
+        charts[i].onmouseout=function(event){
+          event.currentTarget.nextElementSibling.style.display='none';
+        };*/
+    }
+</script>
+
+
+</body>
+</html>

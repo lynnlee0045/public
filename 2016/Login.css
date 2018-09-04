@@ -1,0 +1,65 @@
+.loginPage {
+  opacity: 0;
+  -moz-transition: opacity 1s;
+  -o-transition: opacity 1s;
+  -webkit-transition: opacity 1s; /* Safari */
+  transition: opacity 1s;
+}
+
+#loginContainer form {
+  /*margin: 0 auto;*/
+  /*width: 450px;*/
+  /*height: 210px;*/
+  /*line-height: 3.4;*/
+
+}
+
+#loginDiv {
+  -webkit-box-shadow:0 0 10px  #848484;
+  -moz-box-shadow:0 0 10px  #848484;
+  box-shadow:0 0 10px  #848484;
+}
+
+
+#loginContainer .login-input {
+  width: 100%;
+  height: 40px;
+  margin-left: 50px;
+  font-size: 14px !important;
+  /*background-color: rgba(146, 146, 142, 0.83);*/
+  border-radius: 10px;
+  padding-left: 40px;
+}
+
+#loginContainer .login-submit {
+  margin-top: 17px;
+  width: 120px;
+  height: 30px;
+  /*background-image: url(../images/loginBtn.png);*/
+}
+
+#loginContainer .loginBtn {
+  width: 240px;
+  height: 40px;
+  background-color: #0685e3;
+  border-radius: 10px;
+  margin-top: 10px;
+  margin-left: 50px;
+  color: white;
+  text-align: center;
+  font-size: 18px;
+  font-family: 微软雅黑;
+  line-height: 2;
+  cursor: pointer;
+}
+
+#loginContainer .login-input .dijitButtonNode {
+  width: 100%;
+  padding: 4px 0 5px;
+}
+
+.dj_webkit .dbootstrap .dijitInputContainer{
+  height: 100%;
+  padding: 0px;
+  font-size: 15px;
+}

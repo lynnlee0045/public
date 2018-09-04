@@ -1,0 +1,49 @@
+/**
+ * Created by km on 2016/4/28.
+ */
+define([
+  'dojo/_base/declare',
+  'bplz/TaskManager/_BaseTask'
+], function(declare, BaseTask) {
+  return declare([BaseTask], {
+    constructor: function(url) {
+      this.url = url;
+      this.imageApiName = "/api/Image/";
+    },
+
+    /**
+     * UploadImageToServer
+     * @param {Object} params {base64:img base64 data,userId: user id,title:img name}
+     */
+    UploadImageToServer: function(params) {
+      return this.getPostRestRequestDeferred(params, this.imageApiName + "PostCreateImgAndSaveByBase64Data");
+    },
+    /**
+     * Get Img Info List from server
+     * @param {Object} params {userId:user id,date:yyyyMMdd}
+     */
+    GetImgInfoList: function(params) {
+      return this.getRestRequestDeferred(params, this.imageApiName + "GetImgInfoList");
+    },
+
+    GetImgZip: function(params) {
+      return this.getPostRestRequestDeferred(params, this.imageApiName + "PostZipImage");
+    },
+    GetPPtFileUrl: function(params) {
+      return this.getRestRequestDeferred(params, this.imageApiName + "GetPPtFileUrl");
+    },
+    GetPPtFileUrlsByCondition: function(params) {
+      return this.getRestRequestDeferred(params, this.imageApiName + "GetPPtFileUrlsByCondition");
+    },
+
+    GetStaticsPicDataByCondition: function(params) {
+      return this.getPostRestRequestDeferred(params,  this.imageApiName +"PostGetStaticsPicDataByCondition");
+    },
+
+    GetMotionlessSatellitePicInfo: function(params) {
+      return this.getRestRequestDeferred(params, this.imageApiName + "GetMotionlessSatellitePicInfo");
+    }
+
+
+  });
+});

@@ -1,0 +1,175 @@
+define(["./ConfigManager",
+    "./LayoutManager",
+    "widgets/UseLogin/Login",
+    'bplz/config/config',
+    'dojo/_base/html',
+    'dojo/_base/lang',
+    'dojo/on',
+    'dojo/json',
+    'dojo/mouse',
+    'dojo/topic',
+    'dojo/Deferred',
+    'dojo/promise/all',
+    'dojo/io-query',
+    'dojo/domReady!',
+    'dojo/cookie',
+    './utils',
+    'require'
+  ],
+  function(ConfigManager, LayoutManager, Login, config, html,
+    lang, on, json, mouse, topic, Deferred, all, ioquery,
+    domReady, cookie, utils, require) {
+    /* global jimuConfig:true */
+    var mo = {};
+    var loginPage = null;
+    var authenticationMode = "none";
+    // disable middle mouse button scroll
+    on(window, 'mousedown', function(evt) {
+      if (!mouse.isMiddle(evt)) {
+        return;
+      }
+      evt.preventDefault();
+      evt.stopPropagation();
+      evt.returnValue = false;
+      return false;
+    });
+
+    String.prototype.startWith = function(str) {
+      if (this.substr(0, str.length) === str) {
+        return true;
+      } else {
+        return false;
+      }
+    };
+
+    String.prototype.endWith = function(str) {
+      if (this.substr(this.length - str.length, str.length) === str) {
+        return true;
+      } else {
+        return false;
+      }
+    };
+
+    /*jshint unused: false*/
+    if (typeof jimuConfig === 'undefined') {
+      jimuConfig = {};
+    }
+    jimuConfig = lang.mixin({
+      loadingId: 'main-loading',
+      layoutId: 'bplz-layout-manager',
+      contentId: 'mainContent',
+      mainPageId: 'main-page',
+      timeout: 3000,
+      widthBreaks: [600, 1280]
+    }, jimuConfig);
+
+    window.bplz = {
+      version: '1.0 Beta'
+    };
+
+    function initApp() {
+
+      console.log('bplz init...');
+
+      //html.setStyle('loadGif', 'display', 'none');
+      html.setStyle('loadInfo', 'display', 'none');
+      // html.setStyle('login', 'display', 'block');
+
+      // var userInfo = cookie("userInfo");
+      // if (userInfo) {
+        gotoMainPage({});
+      // } else
+
+      //   initLogin();
+      //function myCallbackFunction(ioArgs) {
+      //  ioArgs.preventCache = true;
+      //  return ioArgs;
+      //}
+
+      // where the argument ioArgs is of type: dojo.__XhrArgs (or) dojo.io.script.__ioArgs
+      //esriRequest.setRequestPreCallback(myCallbackFunction);
+    }
+
+    function initLogin(id, key) {
+      loginPage = new Login({
+        controller: mo
+      }, "loginContainer");
+      loginPage.startup();
+    }
+
+    function gotoMainPage(userInfo) {
+      html.setStyle(jimuConfig.loadingId, 'display', 'none');
+      html.setStyle(jimuConfig.mainPageId, 'display', 'block');
+      var urlParams = getUrlParams();
+      var layoutManager = LayoutManager.getInstance({
+        contentId: jimuConfig.contentId,
+        userInfo: userInfo
+      }, jimuConfig.layoutId);
+      //配置文件管理模块
+      var configManager = ConfigManager.getInstance(urlParams);
+      layoutManager.startup();
+      configManager.loadConfig();
+    }
+
+    function validateLogin(username, passWord) {
+      var password = faultylabs.MD5(passWord);
+
+      var requestUrl = config.LoginServerUrl + 'PostUserLogin';
+      var xhrArgs = {
+        url: requestUrl,
+        postData: json.stringify({
+          name: username,
+          password: password
+        }),
+        preventCache: false,
+        contentType: "application/json",
+        handleAs: "json"
+      };
+      var def = dojo.xhrPost(xhrArgs);
+
+
+      def.then(lang.hitch(this, function(res) {
+        if (!res) {
+          loginPage.invalidUser("获取用户信息失败！");
+        } else {
+          if (res.length > 0) {
+            cookie('userInfo', json.stringify(res[0]), {
+              expires: 0.08
+            });
+            gotoMainPage(res[0]);
+          } else {
+            cookie('userInfo', null, {expires: -1});
+            loginPage.invalidUser();
+          }
+        }
+
+      }), lang.hitch(this, function(err) {
+        loginPage.invalidUser("获取用户信息失败！");
+      }));
+    }
+
+    function validateUser(username, password) {
+      var self = lang.hitch(mo);
+      self.user = username;
+      if (true) {} else {
+        self.loginPage.invalidUser();
+      }
+    }
+
+
+    function getUrlParams() {
+      var s = window.location.search,
+        p;
+      if (s === '') {
+        return {};
+      }
+
+      p = ioquery.queryToObject(s.substr(1));
+      console.log(p);
+      return p;
+    }
+
+    mo.initApp = initApp;
+    mo.validateLogin = validateLogin;
+    return mo;
+  });

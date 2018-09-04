@@ -1,0 +1,348 @@
+define([
+    'dojo/_base/declare',
+    'dojo/_base/lang',
+    'dojo/_base/array',
+    'dojo/_base/html',
+    'dojo/query',
+    'dojo/on',
+    'dojo/mouse',
+    'dojo/Deferred',
+    'dojo/topic',
+    'dojo/dom-class',
+    'dojo/dom-construct',
+    'dojo/dom-style',
+    'bplz/BaseWidget',
+    'bplz/PoolControllerMixin',
+    'bplz/utils',
+    'bplz/dijit/LoadingShelter'
+  ],
+  function(declare, lang, array, html, query, on, mouse, Deferred, topic, domClass, domConstruct, domStyle,
+    BaseWidget, PoolControllerMixin, utils, LoadingShelter) {
+
+    var clazz = declare([BaseWidget, PoolControllerMixin], {
+
+      baseClass: 'bplz-widget-sidebar-controller-container bplz-main-bgcolor',
+
+      maxWidth: 280,
+      minWidth: 35,
+      animTime: 200,
+
+      currLeftControllerId: null,
+      loadedLeftController: [],
+      nonLeftPanel: [],
+      currSelectedIdx: 0,
+
+      constructor: function() {
+
+      },
+
+      startup: function() {
+        this.inherited(arguments);
+        this.widgetManager.maximizeWidget(this);
+        query('.sidebar-toggler', this.domNode).on('click', lang.hitch(this, this._doResize));
+      },
+
+      init: function(controllerConfigs, groupConfig) {
+        this.controllerConfigs = controllerConfigs || [];
+        this.groupConfig = groupConfig || [];
+        this._showWidget(0);
+      },
+
+      showController: function(idx) {
+        this._showWidget(idx);
+      },
+
+
+      _getWidgetById: function(id) {
+        var ret;
+        array.some(this.loadedLeftController, function(w) {
+          if (w.id === id) {
+            ret = w;
+            return true;
+          }
+        }, this);
+        return ret;
+      },
+
+      _showWidget: function(idx) {
+        if (this.loading)
+          this.loading.destroy();
+
+
+        var controllerConfig = this.controllerConfigs[idx];
+        var config = this.groupConfig[idx];
+
+        if (controllerConfig.id == this.currLeftControllerId)
+          return;
+
+        this.loading = new LoadingShelter();
+        this.loading.placeAt('main-page');
+        this.loading.startup();
+
+        var pWidget = this._getWidgetById(this.currLeftControllerId);
+        if (pWidget) {
+          if (pWidget.currentTab && pWidget.currentTab.panel)
+            pWidget.panelManager.closePanel(pWidget.currentTab.panel, true);
+          if (pWidget.tabs.length > 0)
+            pWidget.tabs[pWidget.lastSelectedIndex].selected = false;
+        }
+
+        array.forEach(this.nonLeftPanel, function(panel) {
+          if (panel.state !== 'closed') {
+            this.panelManager.closePanel(panel, false); //关闭无左侧控制栏panel
+          }
+        }, this);
+
+        this.currLeftControllerId = controllerConfig.id;
+
+        if (!controllerConfig.show) //无左侧控制栏
+        {
+          domStyle.set(this.contentId, 'left', 0);
+          this.domNode.style.display = 'none';
+          this.panelManager.showPanel(config.widgets[0]).then(lang.hitch(this, function(panel) {
+            if (array.indexOf(this.nonLeftPanel, panel) === -1) {
+              this.nonLeftPanel.push(panel);
+            }
+            domConstruct.place(panel.domNode, this.contentId);
+            query('.bplz-widget-frame', panel.domNode)[0].style.width = "100%"; //
+            domConstruct.place(this.contentId, jimuConfig.layoutId, "last");
+          }));
+          if (this.loading)
+            this.loading.destroy();
+          return false;
+        } else {
+
+          domConstruct.empty(this.minStateNode);
+          var groups = this._getGroupConfigs(config.label);
+          if (groups.length > 0) {
+
+            var iconConfigs = array.filter(groups[0].widgets, function(iconConfig) {
+              return !iconConfig.roleIds || (iconConfig.roleIds && iconConfig.roleIds.indexOf(this.userInfo.role_id) != -1);
+            }, this);
+
+            array.forEach(iconConfigs, function(w, idx) {
+              this._createTitleNode(w, idx);
+            }, this);
+          }
+
+          this.domNode.style.display = 'block';
+          var leftWidth = this.stateNode == this.minStateNode ? this.minWidth : this.maxWidth;
+          domStyle.set(this.contentId, 'left', leftWidth + "px");
+          var widget = this._getWidgetById(this.currLeftControllerId);
+          if (widget) {
+            domConstruct.place(widget.domNode, query('.max-pane', this.domNode)[0], "last");
+            widget.selectTab(widget.lastSelectedIndex);
+            if (this.windowState != 'maximized') {
+              this.currSelectedIdx = widget.lastSelectedIndex;
+              this._showIndicator(widget.lastSelectedIndex);
+            }
+            if (this.loading)
+              this.loading.destroy();
+            return;
+          }
+          this.widgetManager.maximizeWidget(this);
+          var def = new Deferred();
+          this.widgetManager.loadWidget(controllerConfig).then(lang.hitch(this, function(widget) {
+            if (widget.panel.positionRelativeTo === 'content') {
+              html.place(widget.domNode, this.contentId);
+            } else {
+              domConstruct.place(widget.domNode, query('.max-pane', this.domNode)[0], "last");
+            }
+            html.setStyle(widget.domNode, utils.getPositionStyle(widget.position));
+            html.setStyle(widget.domNode, 'position', 'absolute');
+            widget.controlledGroups = [config.label];
+            try {
+              widget.startup();
+            } catch (err) {
+              console.log(console.error('fail to startup widget ' + widget.name + '. ' + err.stack));
+            }
+            widget.configId = controllerConfig.id;
+            this.loadedLeftController.push(widget);
+            this.currSelectedIdx = 0;
+
+            if (this.loading)
+              this.loading.destroy();
+            def.resolve(widget);
+          }), function(err) {
+            if (this.loading)
+              this.loading.destroy();
+            def.reject(err);
+          });
+          return def;
+        }
+      },
+
+      _getGroupConfigs: function(label) {
+        var ret = [];
+        if (!this.appConfig.widgetPool) {
+          return ret;
+        }
+        if (this.appConfig.widgetPool.groups) {
+          array.forEach(this.appConfig.widgetPool.groups, function(g) {
+            if (g.label == label)
+              ret.push(g);
+          }, this);
+        }
+
+        return ret;
+      },
+
+      _doResize: function() {
+        if (this.windowState === 'maximized') {
+          this.widgetManager.minimizeWidget(this);
+        } else {
+          this.widgetManager.maximizeWidget(this);
+        }
+        topic.publish('contentResize');
+      },
+
+      onMinimize: function() {
+        this._resizeToMin();
+      },
+
+      onMaximize: function() {
+        this._resizeToMax();
+      },
+
+      _resizeToMax: function() {
+
+        query(this.domNode).style('width', this.maxWidth + 'px');
+        domStyle.set(this.contentId, 'left', this.maxWidth + "px");
+        domClass.remove(this.domNode, 'page-sidebar-closed');
+
+        domClass.remove(query('.sidebar-toggler', this.domNode)[0], 'close');
+        domClass.add(query('.sidebar-toggler', this.domNode)[0], 'open');
+
+        query(this.minStateNode).style('display', 'none');
+        query(this.maxStateNode).style('display', 'block');
+        var widget = this._getWidgetById(this.currLeftControllerId);
+        if (widget)
+          widget.resizeController();
+        // query('div', this.doResizeNode).removeClass('right-arrow').addClass('left-arrow');
+        // this.resize();
+
+
+        // if (this.currentTab) {
+        //   this.showGroupContent(this.currentTab.config, this.currentTab);
+        // }
+
+        // var firstOpen = array.every(this.tabs, function(tab) {
+        //   return !tab.panel;
+        // });
+        // if (firstOpen && this.tabs) {
+        //   this.selectTab(0); //edit by km  at 2014/9/15
+        // }
+
+        this.stateNode = this.maxStateNode;
+      },
+
+      _resizeToMin: function() {
+        query(this.domNode).style('width', this.minWidth + 'px');
+        domStyle.set(this.contentId, 'left', this.minWidth + "px");
+        domClass.add(this.domNode, 'page-sidebar-closed');
+
+        domClass.remove(query('.sidebar-toggler', this.domNode)[0], 'open');
+        domClass.add(query('.sidebar-toggler', this.domNode)[0], 'close');
+
+        query(this.minStateNode).style('display', 'block');
+        query(this.maxStateNode).style('display', 'none');
+        this.stateNode = this.minStateNode;
+        var widget = this._getWidgetById(this.currLeftControllerId);
+        this.currSelectedIdx = widget.lastSelectedIndex;
+        this._showIndicator(this.currSelectedIdx);
+      },
+
+      _createTitleNode: function(config, idx) {
+        /*jshint unused:false*/
+        var title = config.label,
+          iconUrl = config.icon,
+
+          minNode = html.create('div', {
+            title: title,
+            'class': 'title-node',
+            'settingid': config.id,
+            i: idx.toString()
+          }, this.minStateNode),
+
+          minIndicatorNode = html.create('div', {
+            'class': 'tab-indicator'
+          }, minNode),
+
+          minImgNode = html.create('img', {
+            src: iconUrl
+          }, minNode);
+
+        this.own(on(minNode, 'click', lang.hitch(this, this._onMinIconClick, minNode)));
+        this.own(on(minNode, mouse.enter, lang.hitch(this, this._onMouseEnter)));
+        this.own(on(minNode, mouse.leave, lang.hitch(this, this._onMouseLeave)));
+
+      },
+
+      _onMinIconClick: function(minNode) {
+        var index = query(minNode).attr('i')[0];
+        this.widgetManager.maximizeWidget(this);
+        var widget = this._getWidgetById(this.currLeftControllerId);
+        if (widget)
+          widget.openTab(parseInt(index));
+        topic.publish('contentResize');
+      },
+
+      _onMouseEnter: function(evt) {
+        var node = evt.currentTarget,
+          index = parseInt(query(node).attr('i')[0]);
+        this._showIndicator(index);
+      },
+
+      _onMouseLeave: function(evt) {
+        var node = evt.currentTarget,
+          index = parseInt(query(node).attr('i')[0], 10);
+
+        this._hideIndicator(index);
+      },
+      _showIndicator: function(index) {
+        var tabIndicators = query('.tab-indicator', this.domNode);
+        for (var i = 0; i < tabIndicators.length; i++) { //取消除当前选中的其他tile的上划线
+          if (i != this.currSelectedIdx)
+            tabIndicators[i].style.width = 0;
+        }
+
+
+        var w = 6; //html.getContentBox(this._getTitleNodeByIndex(index)[0]).w;
+        this._getIndicatorNodeByIndex(index).animateProperty({
+          properties: {
+            width: w
+          },
+          duration: this.animTime,
+          auto: true
+        });
+      },
+
+      _hideIndicator: function(index) {
+        if (index == this.currSelectedIdx)
+          return;
+        this._getIndicatorNodeByIndex(index).animateProperty({
+          properties: {
+            width: 0
+          },
+          duration: this.animTime,
+          auto: true
+        });
+      },
+
+      _getIndicatorNodeByIndex: function(index) {
+        return query('.tab-indicator', this._getTitleNodeByIndex(index)[0]);
+      },
+      _getTitleNodeByIndex: function(index) {
+        var titleNode, contextNode;
+        if (this.windowState === 'maximized') {
+          contextNode = this.maxStateNode;
+        } else {
+          contextNode = this.minStateNode;
+        }
+        titleNode = query('.title-node:nth-child(' + (index + 1) + ')', contextNode);
+        return titleNode;
+      }
+
+    });
+    return clazz;
+  });

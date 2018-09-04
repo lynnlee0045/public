@@ -1,0 +1,150 @@
+/**
+ * Created by zwn on 2016/5/16.
+ */
+
+define([
+  'dojo/_base/declare',
+  'dijit/_WidgetBase',
+  'dojo/_base/lang',
+  'dojo/_base/array',
+  'dojo/on',
+  'dojo/query',
+  "dojo/dom-construct",
+  "dojo/dom-attr",
+  'dojo/dom',
+  'dojo/dom-class',
+  'dojo/Evented',
+  'dojo/dom-geometry'
+
+],function(declare,
+           _WidgetBase,
+           lang,
+           array,
+           on,
+           query,
+           domConstruct,
+           domAttr,
+           dom,
+           domClass,
+           Evented,domGeometry){
+  return declare([_WidgetBase,Evented],{
+     options:[],//
+     'class':"bplz-BpSingleSelect",
+     selectNames:[],
+     containers:[],
+     name:"",
+
+    postCreate:function(){
+      this.inherited(arguments);
+    },
+    startup:function(){
+      this.inherited(arguments);
+      this.containers[this.name]=[];
+      this._createSelects();
+    },
+
+    /**创建选择器
+     *  @private**/
+    _createSelects:function(){
+      var selectsContainer = domConstruct.create('div',{
+       'class':"selectsContainer"
+      },this.domNode);
+       if(this.options&&this.options.length>0){
+
+         var borderWidth=60;
+         var index=0;
+         array.forEach(this.options,function(option){
+           var selectContainer = domConstruct.create('div',{
+             'class':"selectContainer",
+             innerHTML:option.label,
+             value:option.value,
+             name:option.label,
+             checked:option.checked
+           },selectsContainer);
+           index++;
+           var label=option.label;
+           var width=this._getTextSize(label).width;
+           if(label.indexOf("<sub>")<0){
+           var labelLength=this._getLength(label.replace(/&nbsp;/g,"").replace(/<sub>/g,"").replace(/<\/\sub>/g,""));
+             if (labelLength > 7) {
+               selectContainer.style["width"] = width + "px";
+               selectsContainer.style["width"]="100%";
+               this.domNode.style["width"]="91%";
+               this.domNode.style["margin"]="auto";
+             }else{
+
+             }
+           }
+
+           this.selectNames.push(option.label);
+           this.containers[this.name].push(selectContainer);
+           on(selectContainer,'click',lang.hitch(this,this._onClick));
+         },this);
+         this._selectCheckedContainer();
+       }
+    },
+
+    _getTextSize:function(text){
+      var span = document.createElement("span");
+      var result = {};
+      result.width = span.offsetWidth;
+      result.height = span.offsetWidth;
+      span.style.visibility = "hidden";
+      document.body.appendChild(span);
+      if (typeof span.textContent != "undefined")
+        span.textContent = text;
+      else span.innerText = text;
+      result.width = span.offsetWidth - result.width;
+      result.height = span.offsetHeight - result.height;
+      domConstruct.destroy(span);
+      return result;
+    },
+
+    _getLength:function(str){
+      var realLength = 0, len = str.length, charCode = -1;
+      for (var i = 0; i < len; i++) {
+        charCode = str.charCodeAt(i);
+        if (charCode >= 0 && charCode <= 128) realLength += 1;
+        else realLength += 2;
+      }
+      return realLength;
+    },
+
+      _onClick:function(evt){
+      if(evt.target){
+       if(evt.target.innerHTML==''){
+        return;
+       }
+        var selectNode ;
+        if(evt.target.nodeName.toUpperCase()=='DIV') selectNode=evt.target;
+        else if(evt.target.nodeName.toUpperCase()=='SUB')selectNode=evt.target.parentNode;
+        this.emit('click',selectNode.value);
+        array.forEach(this.containers[this.name],function(container){
+          if(container.innerHTML==selectNode.innerHTML)
+            container.checked=true;
+          else container.checked=false;
+        },this);
+        this._selectCheckedContainer();
+      }
+    },
+
+    /**选择被选中的选项**/
+    _selectCheckedContainer:function(){
+      array.forEach(this.containers[this.name],function(container){
+        if(container.checked==undefined||container.checked==null||container.checked==''||container.checked==false){
+          if(domClass.contains(container,'selectContainer'))domClass.remove(container,'selectContainer')
+          if(domClass.contains(container,'checkedContainer'))domClass.remove(container,'checkedContainer')
+          domClass.add(container,'selectContainer');
+        }
+        else if(container.checked==true){
+          if(domClass.contains(container,'selectContainer'))domClass.remove(container,'selectContainer')
+          if(domClass.contains(container,'checkedContainer'))domClass.remove(container,'checkedContainer')
+          domClass.add(container,'checkedContainer');
+          this.value=container.value;
+        }
+      },this)
+    },
+
+
+  });
+});

@@ -1,0 +1,45 @@
+define([
+		'dojo/_base/declare',
+		'dojo/_base/lang',
+		'dojo/on',
+		'dijit/registry',
+		'dojo/dom-attr',
+		'dojo/dom-class',
+		'dojo/query',
+		'dijit/_WidgetBase',
+		'dijit/_TemplatedMixin',
+		'dijit/_WidgetsInTemplateMixin',
+		'dojo/text!./CatchScreenSetting.html',
+		'dijit/form/TextBox'
+	],
+	function(declare, lang, on,registry, domAttr, domClass, query, _WidgetBase, _TemplatedMixin, _WidgetsInTemplateMixin, template) {
+		//3*3 tile nodes, with a close button
+		return declare([_WidgetBase, _TemplatedMixin, _WidgetsInTemplateMixin], {
+			baseClass: 'catch-Screen-Setting',
+			templateString: template,
+			catchArea: "all",
+			postCreate: function() {
+
+			},
+
+			startup: function() {
+				this.catchArea = domAttr.get(query('.active', this.domNode)[0], 'data-name') || "all";
+				on(query('.area-item', this.domNode), 'click', lang.hitch(this, function(evt) {
+					if (domClass.contains(evt.currentTarget, "active")) {
+						return;
+					}
+					var _12 = query(".active", this.domNode)[0];
+					if (_12) {
+						domClass.remove(_12, "active");
+					}
+
+					domClass.add(evt.currentTarget, "active");
+					this.catchArea = domAttr.get(evt.currentTarget, 'data-name');
+				}));
+			},
+
+			getImgName:function(){
+				return registry.byId('imageSaveName').get('value');
+			}
+		});
+	});

@@ -1,0 +1,13 @@
+/**
+ * Author: BpKm <kangming310@sina.com>
+ * Date:   2014/12/5
+ * Fun : 配置登陆之前的信息
+ */
+
+define(function(){
+  return {
+    Login:true,
+    LoginServerUrl:"http://192.168.1.119/Server/api/Login/",
+    ShareLoginUrl:"http://ecs.zeei.com.cn:92/Login"
+  }
+})

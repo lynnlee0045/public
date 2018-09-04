@@ -1,0 +1,1612 @@
+define(['dojo/_base/lang',
+    'dojo/_base/array',
+    'dojo/_base/html',
+    'dojo/_base/lang',
+    'dojo/query',
+    'dojo/NodeList-traverse',
+    'dojo/Deferred',
+    'dojo/on',
+    'dojo/request/xhr',
+    'bplz/DateUtil',
+    'dojo/request'
+  ],
+
+  function (lang, array, html, lang, query, nlt, Deferred, on, xhr, DateUtil, request) {
+    var mo = {};
+
+    //if no beforeId, append to head tag, or insert before the id
+    function loadStyleLink(id, href, beforeId) {
+      var def = new Deferred(),
+        styleNode;
+
+      if (beforeId) {
+        styleNode = html.create('link', {
+          id: id,
+          rel: "stylesheet",
+          type: "text/css",
+          href: href
+        }, html.byId(beforeId), 'before');
+      } else {
+        styleNode = html.create('link', {
+          id: id,
+          rel: "stylesheet",
+          type: "text/css",
+          href: href
+        }, document.getElementsByTagName('head')[0]);
+      }
+
+      on(styleNode, 'load', function () {
+        def.resolve('load');
+      });
+
+      //for the browser which doesn't fire load event
+      //safari update documents.stylesheets when style is loaded.
+      var ti = setInterval(function () {
+        var loadedSheet;
+        if (array.some(document.styleSheets, function (styleSheet) {
+            if (styleSheet.href && styleSheet.href.substr(styleSheet.href.indexOf(href), styleSheet.href.length) === href) {
+              loadedSheet = styleSheet;
+              return true;
+            }
+          })) {
+          if (!def.isFulfilled() && (loadedSheet.cssRules && loadedSheet.cssRules.length || loadedSheet.rules && loadedSheet.rules.length)) {
+            def.resolve('load');
+          }
+          clearInterval(ti);
+        }
+      }, 50);
+      return def;
+    }
+
+    var errorCheckLists = [];
+    require.on("error", function (err) {
+      array.forEach(errorCheckLists, function (o) {
+        if (err.info[0] && err.info[0].indexOf(o.resKey) > -1) {
+          o.def.reject(err);
+        }
+        for (var p in err.info) {
+          if (p.indexOf(o.resKey) > -1) {
+            o.def.reject(err);
+          }
+        }
+      });
+    });
+
+    mo.checkError = function (resKey, def) {
+      //when resKey match a error, def will be reject
+      errorCheckLists.push({
+        resKey: resKey,
+        def: def
+      });
+    };
+
+    /**
+     * Repalce the placeholders in the obj Object properties with the props Object values,
+     * return the replaced object
+     * The placeholder syntax is: ${prop}
+     */
+    mo.replacePlaceHolder = function (obj, props) {
+      var str = JSON.stringify(obj),
+        m = str.match(/\$\{(\w)+\}/g),
+        i;
+
+      if (m === null) {
+        return obj;
+      }
+      for (i = 0; i < m.length; i++) {
+        var p = m[i].match(/(\w)+/g)[0];
+        if (props[p]) {
+          str = str.replace(m[i], props[p]);
+        }
+      }
+      return JSON.parse(str);
+    };
+
+    /***
+     * change latitude/longitude to degree, minute, second
+     **/
+    mo.changeUnit = function (val) {
+      var abs = Math.abs(val),
+        text, d, m, s;
+      d = Math.floor(abs);
+      m = Math.floor((abs - d) * 60);
+      s = (((abs - d) * 60 - m) * 60).toFixed(2);
+      //00B0 id degree character
+      text = d + '\u00B0' + ((m < 10) ? ('0' + m) : m) + '\'' + ((s < 10) ? ('0' + s) : s) + '"';
+      return text;
+    };
+
+    /**
+     * the formated format is: mm:ss.ms
+     **/
+    mo.formatTime = function (time) {
+      var s = time / 1000,
+        m = Math.floor(s / 60),
+        s2 = Number(s - m * 60).toFixed(1),
+        text = ((m < 10) ? '0' + m : m) + ':' + ((s2 < 10) ? '0' + s2 : s2);
+      return text;
+    };
+
+    mo.parseTime = function (text) {
+      var p = /(\d{2,})\:(\d{2})\.(\d{1})/,
+        m, t;
+      if (!p.test(text)) {
+        console.log('wrong time format.');
+        return -1;
+      }
+      m = text.match(p);
+      t = (parseInt(m[1], 10) * 60 + parseInt(m[2], 10) + parseInt(m[3], 10) / 10) * 1000;
+      return t;
+    };
+
+    mo.preloadImg = function (imgs, rpath) {
+      var imgArray = [];
+      if (typeof imgs === 'string') {
+        imgArray = [imgs];
+      } else {
+        imgArray = imgs;
+      }
+      array.forEach(imgArray, function (imgUrl) {
+        var img = new Image();
+        if (rpath) {
+          img.src = rpath + imgUrl;
+        } else {
+          img.src = imgUrl;
+        }
+      });
+    };
+
+    /**
+     * get style object from position
+     * the position can contain 6 property: left, top, right, bottom, width, height
+     * please refer to AbstractModule
+     */
+    mo.getPositionStyle = function (position) {
+      var style = {};
+      for (var p in position) {
+        if (array.indexOf(['left', 'top', 'right', 'bottom', 'width', 'height'], p) >= 0) {
+          if (typeof position[p] === 'number') {
+            style[p] = position[p] + 'px';
+          } else {
+            style[p] = position[p];
+          }
+        }
+      }
+      return style;
+    };
+
+
+    mo.getPositionStyleByStyleName = function (position, styleName) {
+      var style = {};
+      for (var p in position) {
+        if (array.indexOf([styleName], p) >= 0) {
+          if (typeof position[p] === 'number') {
+            style[p] = position[p] + 'px';
+          } else {
+            style[p] = position[p];
+          }
+        }
+      }
+      return style;
+    };
+
+    /**
+     * compare two object/array recursively
+     */
+    function isEqual(o1, o2) {
+      var leftChain, rightChain;
+
+      function compare2Objects(x, y) {
+        var p;
+        // remember that NaN === NaN returns false
+        // and isNaN(undefined) returns true
+        if (isNaN(x) && isNaN(y) && typeof x === 'number' && typeof y === 'number') {
+          return true;
+        }
+        // Compare primitives and functions.
+        // Check if both arguments link to the same object.
+        // Especially useful on step when comparing prototypes
+        if (x === y) {
+          return true;
+        }
+        // Works in case when functions are created in constructor.
+        // Comparing dates is a common scenario. Another built-ins?
+        // We can even handle functions passed across iframes
+        if ((typeof x === 'function' && typeof y === 'function') ||
+          (x instanceof Date && y instanceof Date) ||
+          (x instanceof RegExp && y instanceof RegExp) ||
+          (x instanceof String && y instanceof String) ||
+          (x instanceof Number && y instanceof Number)) {
+          return x.toString() === y.toString();
+        }
+        // check for infinitive linking loops
+        if (leftChain.indexOf(x) > -1 || rightChain.indexOf(y) > -1) {
+          return false;
+        }
+        // Quick checking of one object beeing a subset of another.
+        // todo: cache the structure of arguments[0] for performance
+        for (p in y) {
+          if (y.hasOwnProperty(p) !== x.hasOwnProperty(p)) {
+            return false;
+          } else if (typeof y[p] !== typeof x[p]) {
+            return false;
+          }
+        }
+        for (p in x) {
+          if (y.hasOwnProperty(p) !== x.hasOwnProperty(p)) {
+            return false;
+          } else if (typeof y[p] !== typeof x[p]) {
+            return false;
+          }
+          switch (typeof(x[p])) {
+            case 'object':
+            case 'function':
+              leftChain.push(x);
+              rightChain.push(y);
+              if (!compare2Objects(x[p], y[p])) {
+                return false;
+              }
+              leftChain.pop();
+              rightChain.pop();
+              break;
+            default:
+              if (x[p] !== y[p]) {
+                return false;
+              }
+              break;
+          }
+        }
+        return true;
+      }
+
+      leftChain = []; //todo: this can be cached
+      rightChain = [];
+      if (!compare2Objects(o1, o2)) {
+        return false;
+      }
+      return true;
+    }
+
+    mo.isEqual = isEqual;
+
+    //merge the target and src object/array, return the merged object/array.
+    function merge(target, src) {
+      var array = Array.isArray(src);
+      var dst = array && [] || {};
+
+      if (array) {
+        target = target || [];
+        dst = dst.concat(target);
+        src.forEach(function (e, i) {
+          if (typeof target[i] === 'undefined') {
+            dst[i] = e;
+          } else if (typeof e === 'object') {
+            dst[i] = merge(target[i], e);
+          } else {
+            if (target.indexOf(e) === -1) {
+              dst.push(e);
+            }
+          }
+        });
+      } else {
+        if (target && typeof target === 'object') {
+          Object.keys(target).forEach(function (key) {
+            dst[key] = target[key];
+          });
+        }
+        Object.keys(src).forEach(function (key) {
+          if (typeof src[key] !== 'object' || !src[key]) {
+            dst[key] = src[key];
+          } else {
+            if (!target[key]) {
+              dst[key] = src[key];
+            } else {
+              dst[key] = merge(target[key], src[key]);
+            }
+          }
+        });
+      }
+
+      return dst;
+    }
+
+    function setVerticalCenter(contextNode) {
+      function doSet() {
+        var nodes = query('.bplz-vcenter-text', contextNode),
+          h, ph;
+        array.forEach(nodes, function (node) {
+          h = html.getContentBox(node).h;
+          html.setStyle(node, {
+            lineHeight: h + 'px'
+          });
+        }, this);
+
+        nodes = query('.bplz-vcenter', contextNode);
+        array.forEach(nodes, function (node) {
+          h = html.getContentBox(node).h;
+          ph = html.getContentBox(query(node).parent()[0]).h;
+          html.setStyle(node, {
+            marginTop: (ph - h) / 2 + 'px'
+          });
+        }, this);
+      }
+
+      //delay sometime to let browser update dom
+      setTimeout(doSet, 10);
+    }
+
+    /**
+     * get uri info from the configured uri property,
+     * the info contains: folderUrl, name
+     */
+    function getUriInfo(uri) {
+      var pos, firstSeg, info = {},
+        amdFolder;
+
+      pos = uri.indexOf('/');
+      firstSeg = uri.substring(0, pos);
+
+      //config using package
+      amdFolder = uri.substring(0, uri.lastIndexOf('/') + 1);
+      info.folderUrl = require(mo.getRequireConfig()).toUrl(amdFolder);
+      info.amdFolder = amdFolder;
+
+      return info;
+    }
+
+    mo.file = {
+      supportHTML5: function () {
+        if (window.File && window.FileReader && window.FileList && window.Blob) {
+          return true;
+        } else {
+          return false;
+        }
+      },
+      containSeparator: function (path) {
+        if (path.indexOf("/") >= 0) {
+          return true;
+        } else {
+          if (path.indexOf("\\") >= 0) {
+            return true;
+          } else {
+            return false;
+          }
+        }
+      },
+      getNameFromPath: function (path) {
+        var separator = "";
+        if (path.indexOf("/") >= 0) {
+          separator = "/";
+        } else {
+          separator = "\\";
+        }
+        var segment = path.split(separator);
+        if (segment.length > 0) {
+          return segment[segment.length - 1];
+        } else {
+          return null;
+        }
+
+      },
+      getFolderFromPath: function (path) {
+        return path.substr(0, path.length - mo.file.getNameFromPath(path).length);
+      },
+      /********
+       * read file by HTML5 API.
+       *
+       * parameters:
+       * file: the file will be read.
+       * filter: file type filter, files which don't match the filter will not be read and return false.
+       * maxSize: file size which exceeds the size will return false;
+       * cb: the callback function when file is read completed, signature: (err, fileName, fileData)
+       */
+      readFile: function (file, filter, maxSize, cb) {
+        // Only process image files.
+        if (!file.type.match(filter)) {
+          cb("Invalid file type.");
+        }
+
+        if (file.fileSize >= maxSize) {
+          cb("Too large file, max size is " + Math.floor(maxSize / 1000) + "K.");
+        }
+
+        var reader = new FileReader();
+        // Closure to capture the file information.
+        reader.onload = function (e) {
+          cb(null, file.name, e.target.result);
+        };
+        // Read in the image file as a data URL.
+        reader.readAsDataURL(file);
+      }
+    };
+
+    mo.checkFileExist = function (file) {
+      var def = new Deferred();
+      xhr(file).then(function () {
+        def.resolve(true);
+      }, function () {
+        def.resolve(false);
+      });
+      return def;
+    };
+
+    mo.processWidgetSetting = function (setting) {
+      if (!setting.uri) {
+        return setting;
+      }
+      lang.mixin(setting, getUriInfo(setting.uri));
+
+      if (!setting.icon) {
+        setting.icon = setting.folderUrl + 'images/icon.png';
+      }
+      if (!setting.thumbnail) {
+        setting.thumbnail = setting.folderUrl + 'images/thumbnail.png';
+      }
+      return setting;
+    };
+
+    mo.getRequireConfig = function () {
+      /* global jimuConfig */
+      if (jimuConfig && jimuConfig.widgetsPackage) {
+        return {
+          packages: [jimuConfig.widgetsPackage]
+        };
+      } else {
+        return {};
+      }
+    };
+
+    mo.reCreateArray = function (obj) {
+      //summary:
+      //  because of dojo's lang.isArray issue, we need re-create the array properties
+      var ret;
+
+      function copyArray(_array) {
+        var retArray = [];
+        _array.forEach(function (a) {
+          if (Array.isArray(a)) {
+            retArray.push(copyArray(a));
+          } else if (typeof a === 'object') {
+            retArray.push(copyObject(a));
+          } else {
+            retArray.push(a);
+          }
+        });
+        return retArray;
+      }
+
+      function copyObject(_obj) {
+        var ret = {};
+        for (var p in _obj) {
+          if (!_obj.hasOwnProperty(p)) {
+            continue;
+          }
+          if (Array.isArray(_obj[p])) {
+            ret[p] = copyArray(_obj[p]);
+          } else if (typeof _obj[p] === 'object') {
+            ret[p] = copyObject(_obj[p]);
+          } else {
+            ret[p] = _obj[p];
+          }
+        }
+        return ret;
+      }
+
+      if (Array.isArray(obj)) {
+        ret = copyArray(obj);
+      } else {
+        ret = copyObject(obj);
+      }
+      return ret;
+    };
+
+    mo.setVerticalCenter = setVerticalCenter;
+    mo.merge = merge;
+    mo.loadStyleLink = loadStyleLink;
+
+
+    mo.cutString = function (s, _3) {
+
+      function getByteLength(s) {
+        return (s || "").toString().trim().replace(/[^\x00-\xff]/g, "**").length;
+      }
+
+      var _4 = s.length,
+        _5 = getByteLength(s),
+        r;
+      if (_3 >= _5 || _3 < 0) {
+        return s;
+      }
+      do {
+        --_4;
+        r = s.slice(0, _4);
+        _5 = getByteLength(r);
+        if (_5 <= _3) {
+          return r;
+        }
+      } while (_4 > 0);
+    };
+
+
+    // reset some field of config by template config.
+    mo.setConfigByTemplate = function (config, key, value) {
+      //config: Object
+      //  the destination config object
+      //key: String
+      //  the key value relative to the config object, like this: app_p1_p2[0], app_p1_p2[1]--
+
+      var keyArray = convertToKeyArray(key);
+
+      var obj = config;
+      for (var i = 1; i < keyArray.length - 1; i++) {
+        obj = getSubObj(obj, keyArray[i]);
+        if (!obj) {
+          return;
+        }
+      }
+
+      if (keyArray[keyArray.length - 1].deleteFlag) {
+        if (value === true) {
+          if (lang.isArray(obj[keyArray[keyArray.length - 1].key])) {
+            //obj[keyArray[keyArray.length - 1].key].splice([keyArray[keyArray.length - 1].index], 1);
+            delete obj[keyArray[keyArray.length - 1].key][keyArray[keyArray.length - 1].index];
+          } else {
+            delete obj[keyArray[keyArray.length - 1].key];
+          }
+        }
+      } else {
+        if (lang.isArray(obj[keyArray[keyArray.length - 1].key])) {
+          obj[keyArray[keyArray.length - 1].key][keyArray[keyArray.length - 1].index] = value;
+        } else {
+          obj[keyArray[keyArray.length - 1].key] = value;
+        }
+      }
+
+      function getSubObj(obj, keyInfo) {
+        if (lang.isArray(obj[keyInfo.key])) {
+          return obj[keyInfo.key][keyInfo.index];
+        } else {
+          return obj[keyInfo.key];
+        }
+      }
+
+      function convertToKeyArray(str) {
+        var arrayKey = [];
+        str.split('_').forEach(function (str) {
+          var deleteFlag = false;
+          var pos;
+          if (str.slice(str.length - 2) === "--") {
+            deleteFlag = true;
+            str = str.slice(0, str.length - 2);
+          }
+          pos = str.search(/\[[0-9]+\]/);
+          if (pos === -1) {
+            (pos = str.length);
+          }
+          arrayKey.push({
+            "key": str.slice(0, pos),
+            "index": Number(str.slice(pos + 1, -1)),
+            "deleteFlag": deleteFlag
+          });
+        });
+        return arrayKey;
+      }
+    };
+
+
+    /**
+     * upload img to server (base64 data)
+     * @param  {Object} inputParams 参数
+     * @param  {String} url         后台长传服务地址
+     * @param  {String} proxyURL    如有有代理 则为对应的代理服务地址
+     * @return {Deferred}            deferred
+     */
+    mo.upLoadImgData = function (inputParams, url, proxyURL) {
+      var requestUrl = proxyURL ? proxyURL + "?" + url : url;
+      var xhrArgs = {
+        url: requestUrl,
+        postData: json.stringify(inputParams),
+        preventCache: false,
+        contentType: "application/json",
+        handleAs: "json"
+      };
+      return dojo.xhrPost(xhrArgs);
+    };
+
+    mo.addSubToLabel = function (label) {
+      var pol = label.toUpperCase();
+      if (pol.indexOf("NO2") != -1) {
+        pol = pol.replace(/NO2/g, "NO<sub>2</sub>");
+      }
+      if (pol.indexOf("SO2") != -1) {
+        pol = pol.replace(/SO2/g, "SO<sub>2</sub>");
+      }
+      if (pol.indexOf("O3") != -1) {
+        pol = pol.replace("O3", "O<sub>3</sub>");
+      }
+      if (pol.indexOf("PM2.5") != -1) {
+        pol = pol.replace("PM2.5", "PM<sub>2.5</sub>");
+      }
+      if (pol.indexOf("PM25") != -1) {
+        pol = pol.replace("PM25", "PM<sub>2.5</sub>");
+      }
+      if (pol.indexOf("PM10") != -1) {
+        pol = pol.replace("PM10", "PM<sub>10</sub>");
+      }
+      return pol;
+    };
+
+    mo.getDateByDbType = function (dbType, dateStr) {
+      if (dbType.toUpperCase() == "ORACLE") {
+        return "date'" + dateStr + "'";
+      } else if (dbType.toUpperCase() == "POSTGRES") {
+        return "'" + dateStr + "'";
+      }
+    };
+
+    function changeObjectPropertyName(dbType, objects) {
+      if (!objects)
+        return objects;
+      if (dbType.toUpperCase() == "ORACLE") {
+        if (lang.isArray(objects)) {
+          var newArray = array.map(objects, function (object) {
+            return changeObjectPropertyName(dbType, object)
+          });
+          return newArray;
+        } else {
+          for (var property in objects) {
+            if (!objects.hasOwnProperty(property)) continue;
+            if (property.toLowerCase() != property) {
+              objects[property.toLowerCase()] = objects[property];
+              delete objects[property];
+            }
+          }
+          return objects;
+        }
+      } else if (dbType.toUpperCase() == "POSTGRES") {
+        return objects;
+      }
+    }
+
+    mo.changeObjectPropertyName = changeObjectPropertyName;
+
+    function getLayerIdxByName(layerJson, layerName) {
+      for (var i = 0; i < layerJson.length; i++) {
+        if (layerJson[i].name.toUpperCase() == layerName.toUpperCase()) {
+          return layerJson[i].id;
+        }
+      }
+    }
+
+    mo.getLayerIdxByName = getLayerIdxByName;
+
+    function getLayerIndexByParentIdAndName(layerJson, parentId, name) {
+      for (var i = parentId; i < layerJson.length; i++) {
+        if (layerJson[i].name.toUpperCase() == name.toUpperCase() && layerJson[i].parentLayerId == parentId) {
+          return layerJson[i].id;
+        }
+      }
+    }
+
+    /**
+     * 获取图层服务的id
+     * @param layerJson 服务图层Json
+     * @param area  区域
+     * @param mode 模式
+     * @param layerType 图层类型(污染物/湿度/温度/降水/气压/)
+     * @param layerName 图层名称
+     * @returns {*}
+     */
+    mo.getDistributionLayerRestId = function (layerJson, area, mode, layerType, layerName) {
+      var layId, polId;
+      var areaId = getLayerIdxByName(layerJson, area);
+
+      if (layerType == "污染物") {
+        var modeId = getLayerIndexByParentIdAndName(layerJson, areaId, mode);
+        polId = getLayerIndexByParentIdAndName(layerJson, modeId, layerType);
+        layId = getLayerIndexByParentIdAndName(layerJson, polId, layerName);
+      } else {
+        polId = getLayerIndexByParentIdAndName(layerJson, areaId, layerType);
+        layId = getLayerIndexByParentIdAndName(layerJson, polId, layerName);
+      }
+      return layId;
+    };
+
+    /**
+     * 切换热点库和年度库
+     * @param date
+     * @returns {string}
+     */
+    mo.getMapServerurl = function (date) {
+      var serverName = "hot";
+      var currDt = new Date();
+      var num = DateUtil.dateDiff('d', date, currDt);
+      if (date.getFullYear() < currDt.getFullYear())
+        serverName = date.getFullYear();
+      else if (num > 31)
+        serverName = currDt.getFullYear();
+      return serverName;
+    };
+
+
+    /**
+     * Method: zeroPad
+     * Create a zero padded string optionally with a radix for casting numbers.
+     *
+     * Parameters:
+     * num - {Number} The number to be zero padded.
+     * len - {Number} The length of the string to be returned.
+     * radix - {Number} An integer between 2 and 36 specifying the base to use
+     *     for representing numeric values.
+     */
+    mo.zeroPad = function (num, len, radix) {
+      var str = num.toString(radix || 10);
+      while (str.length < len) {
+        str = "0" + str;
+      }
+      return str;
+    };
+
+
+    mo.getInfoByAqiValue = function (aqi, colors) {
+      var level = "--";
+      var levelNum = "-999";
+      var color = "";
+      var wrw = "--";
+      var hdirect = "--";
+      var step = "--";
+      var iaqi = aqi;
+
+      if (aqi == "-999" || aqi == "-999.0" || aqi == "-999.00" || aqi == undefined || aqi == "--" || aqi == "-" || aqi == "" || aqi == -999) {
+        levelNum = "-999";
+        color = colors[0];
+        iaqi = '--';
+      } else if (aqi <= 50 && aqi >= 0) {
+        level = "优";
+        levelNum = "1";
+        color = colors[1];
+        wrw = "Pm25";
+        hdirect = "空气质量令人满意，基本无空气污染";
+        step = "各类人群可正常活动";
+      } else if (aqi > 50 && aqi <= 100) {
+        level = "良";
+        levelNum = "2";
+        color = colors[2];
+        wrw = "Pm25";
+        hdirect = "空气质量可以接受，但某些污染物可能对极少数异常敏感人群健康又较弱影响";
+        step = "极少数异常敏感人群应减少户外活动";
+      } else if (aqi > 100 && aqi <= 150) {
+        level = "轻度污染";
+        levelNum = "3";
+        color = colors[3];
+        wrw = "Pm25";
+        hdirect = "易感染人群症状有轻度加剧，健康人群出现刺激症状";
+        step = "儿童、老年人及心脏病、呼吸系统疾病患者应减少长时间、高强度的户外锻炼";
+      } else if (aqi > 150 && aqi <= 200) {
+        level = "中度污染";
+        levelNum = "4";
+        color = colors[4];
+        wrw = "Pm25";
+        hdirect = "进一步加剧与感染人群症状，可能对健康人群心脏、呼吸系统有影响";
+        step = "儿童、老年人及心脏病、呼吸系统疾病患者应减少长时间、高强度的户外锻炼，一般人群适量减少户外运动";
+      } else if (aqi > 200 && aqi <= 300) {
+        level = "重度污染";
+        levelNum = "5";
+        color = colors[5];
+        wrw = "Pm25";
+        hdirect = "心脏病和肺病患者症状显著加剧，运动耐受力降低，健康人群普遍出现症状";
+        step = "儿童、老年人及心脏病、肺病患者应停留在室内，停止户外运动，一般人群减少户外运动";
+      } else {
+        level = "严重污染";
+        levelNum = "6";
+        color = colors[6];
+        wrw = "Pm25";
+        hdirect = "健康人群运动耐受力降低，有明显强烈症状，提前出现某些疾病";
+        step = "儿童、老年人和病人应当留在室内,避免体力消耗，一般人群避免户外运动";
+      }
+      return {
+        level: level,
+        levelNum: levelNum,
+        color: color,
+        wrw: wrw,
+        hdirect: hdirect,
+        step: step,
+        iaqi: iaqi
+      };
+
+    };
+
+    mo.getAqiByPollutant = function (pol, density) {
+      if (!pol || !density)
+        return '';
+      var IAQI = [0, 50, 100, 150, 200, 300, 400, 500];
+      var POLLUTANT = {
+        pm25: [0, 35, 75, 115, 150, 250, 350, 500],
+        pm10: [0, 50, 150, 250, 350, 420, 500, 600],
+        so2: [0, 50, 150, 475, 800, 1600, 2100, 2620],
+        no2: [0, 40, 80, 180, 280, 565, 750, 940],
+        co: [0, 2, 4, 14, 24, 36, 48, 60],
+        o3_1h: [0, 160, 200, 300, 400, 800, 1000, 1200],
+        o3_8h: [0, 100, 160, 215, 265, 800, 1000, 1200]
+      };
+      var polArr = POLLUTANT[pol.toLowerCase()];
+      var idx = 7;
+      for (var i = 0; i < polArr.length; i++) {
+        if (polArr[i] >= density) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx == 7)
+        return 500;
+      else if (idx == 0)
+        return 0;
+      else
+        return Math.ceil((IAQI[idx] - IAQI[idx - 1]) / (polArr[idx] - polArr[idx - 1]) * (density - polArr[idx - 1]) + IAQI[idx - 1]);
+    };
+
+
+    mo.getAqiLevelByAQI = function (aqi) {
+      aqi = Number(aqi);
+      var idx = 5;
+      var aqiArr = [0, 50, 100, 150, 200, 300];
+      var levelArr = ["优", "良", "轻", "中", "重", "严重"];
+      if (!aqi || aqi < 0)
+        return "";
+      for (var i = 0; i < aqiArr.length; i++) {
+        if (aqiArr[i] >= aqi) {
+          idx = i - 1;
+          break;
+        }
+      }
+      return levelArr[idx];
+    };
+
+    mo.getPollutantLabel = function (pollutant) {
+      var pollutantStr = "";
+      pollutant = pollutant.replace('，', ',');
+      var pollutantArray = pollutant.split(',');
+      array.forEach(pollutantArray, function (item, idx) {
+        if (item === "pm25" || item === "pm2.5" || item === "pm<sub>2.5</sub>" || item === "PM25" || item === "PM2.5" || item === "PM<sub>2.5</sub>") {
+          pollutantStr += "细颗粒物";
+        }
+        else if (item === "pm10" || item === "pm<sub>10</sub>" || item === "PM10" || item === "PM<sub>10</sub>") {
+          pollutantStr += "可吸入颗粒物";
+        }
+        else if (item === "so2" || item === "so<sub>2</sub>" || item === "SO2" || item === "SO<sub>2</sub>") {
+          pollutantStr += "二氧化硫";
+        }
+        else if (item === "no2" || item === "no<sub>2</sub>" || item === "NO2" || item === "NO<sub>2</sub>") {
+          pollutantStr += "二氧化氮";
+        }
+        else if (item === "o3" || item === "o<sub>3</sub>" || item === "O3" || item === "O<sub>3</sub>") {
+          pollutantStr += "臭氧";
+        }
+        else if (item === "co" || item === "CO") {
+          pollutantStr += "一氧化碳";
+        }
+        if(idx<pollutantArray.length-1)pollutantStr += ",";
+      });
+      return pollutantStr;
+
+    };
+
+    mo.getMapserverObj = function (mapServerUrl, successFun, errFun) {
+      request({
+        url: mapServerUrl,
+        content: {
+          f: "json"
+        },
+        handleAs: "json",
+        callbackParamName: "callback"
+      }).then(successFun, errFun);
+    };
+
+    mo.getApproximateValue = function (dataArr, value) {
+
+      var flg = array.every(dataArr, function (item) {
+        return item == "";
+      });
+
+      if (dataArr.length == 0 || !dataArr || !value || flg)
+        return null;
+
+      var diffArr = array.map(dataArr, function (item) {
+        return Math.abs(item - value);
+      });
+      var min = diffArr[0];
+      var idx = 0;
+      for (var i = 1; i < diffArr.length; i++) {
+        if (diffArr[i] < min && dataArr[i] != "") {
+          min = diffArr[i];
+          idx = i;
+        }
+      }
+      return {
+        value: min,
+        idx: idx
+      };
+    };
+    mo.getwebOfficeObjStr = function () {
+      var s = "";
+      if (navigator.userAgent.indexOf("MSIE") > 0 || window.ActiveXObject || "ActiveXObject" in window) {
+        s = "<OBJECT id='WebOffice1' align='middle' style='LEFT: 0px; WIDTH: 100%; TOP: 0px; HEIGHT:100%'" + "classid=clsid:E77E049B-23FC-4DB8-B756-60529A35FAD5 " + "codebase='WebOffice.cab#Version=7,0,1,0'>" + "</OBJECT>";
+      }
+
+      if (navigator.userAgent.indexOf("Chrome") > 0) {
+        s = "<object id='WebOffice1' type='application/x-itst-activex' align='baseline' border='0'" + "style='LEFT: 0px; WIDTH: 100%; TOP: 0px; HEIGHT: 100%'" + "clsid='{E77E049B-23FC-4DB8-B756-60529A35FAD5}'" + "event_NotifyCtrlReady='WebOffice1_NotifyCtrlReady' " + "codebase='WebOffice.cab#Version=7,0,1,0'>" + "</object>";
+      }
+
+      if (navigator.userAgent.indexOf("Firefox") > 0) {
+        s = "<object id='WebOffice1' type='application/x-itst-activex' align='baseline' border='0'" + "style='LEFT: 0px; WIDTH: 100%; TOP: 0px; HEIGHT: 100%'" + "clsid='{E77E049B-23FC-4DB8-B756-60529A35FAD5}'" + "event_NotifyCtrlReady='WebOffice1_NotifyCtrlReady' " + "codebase='tools/WebOffice.cab#Version=7,0,1,0'>" + "</object>";
+      }
+      return s;
+    };
+    mo.checkActivex = function () {
+      var Sys = {};
+
+      var ua = navigator.userAgent.toLowerCase();
+
+      var s;
+
+      (s = ua.match(/msie ([\d.]+)/)) ? Sys.ie = s[1] :
+
+        (s = ua.match(/firefox\/([\d.]+)/)) ? Sys.firefox = s[1] :
+
+          (s = ua.match(/chrome\/([\d.]+)/)) ? Sys.chrome = s[1] :
+
+            (s = ua.match(/opera.([\d.]+)/)) ? Sys.opera = s[1] :
+
+              (s = ua.match(/version\/([\d.]+).*safari/)) ? Sys.safari = s[1] : 0;
+      var curWwwPath = window.document.location.href;
+      //获取主机地址之后的目录，如： uimcardprj/share/meun.jsp
+      var pathName = window.document.location.pathname;
+      var pos = curWwwPath.indexOf(pathName);
+      var mulu = pathName.substring(0, pathName.substr(1).indexOf('/') + 1);
+      var smart = pathName.substring(mulu.length + 1, pathName.lastIndexOf("/"));
+      //获取主机地址，如： http://localhost:8083
+      var localhostPath = curWwwPath.substring(0, pos);
+      var dowLoadPath = localhostPath + mulu;
+      var isInstalled = false;
+      var version = null;
+      if (Sys.firefox || Sys.chrome) {
+        var mimetype = navigator.mimeTypes["application/x-itst-activex"];
+        if (mimetype) {
+          var plugin = mimetype.enabledPlugin;
+          if (plugin) {
+            //the plugins has done
+            try {
+              if (smart == "weboffice") {
+                document.getElementById("WebOffice1").GetOcxVersion();
+              }
+              if (smart == "aip") {
+                document.getElementById("HWPostil1").IsLogin();
+              }
+            } catch (e) {
+              var s = "";
+              s += "<div align='center'>"
+              s += "<table border='1' style='border:1px solid #cad9ea'> <tr> <td colspan='2' style='border:1px solid #cad9ea; padding:0 1em 0;color:red'>您的电脑缺少插件，无法操作Word，" +
+                "您可能需要安装以下控件。</td> </tr>";
+              s += "<tr><td style='border:1px solid #cad9ea; padding:0 1em 0' align='left'>webOffice,aip控件，确保安装兼容插件后请下载安装此控件，安装后重启浏览器！</td><td style='border:1px solid #cad9ea; padding:0 1em 0'><a href= '" + dowLoadPath;
+              s += "/tools/Setup.exe'>点击下载</a></td></tr>";
+              s += "<div >"
+
+              document.writeln(s);
+              document.close();
+            }
+          }
+        } else {
+          var s = "";
+          s += "<div align='center'>"
+          s += "<table border='1' style='border:1px solid #cad9ea'> <thead> <th colspan='2' style='border:1px solid #cad9ea; padding:0 1em 0;color:red'>您的电脑缺少插件，无法操作Word，" +
+            "您可能需要安装以下控件。</th> </thead>";
+          s += "<tr><td style='border:1px solid #cad9ea; padding:0 1em 0'>请安装兼容火狐或者谷歌浏览器插件。安装后请重启浏览器！</td><td style='border:1px solid #cad9ea; padding:0 1em 0'><a href= '" + dowLoadPath;
+          s += "/tools/ffactivex-setup-r39.exe' >点击下载</a></td></tr>";
+          s += "<tr><td style='border:1px solid #cad9ea; padding:0 1em 0'>webOffice,aip控件，确保安装兼容插件后请下载安装此控件，安装后重启浏览器！</td><td style='border:1px solid #cad9ea; padding:0 1em 0'><a href= '" + dowLoadPath;
+          s += "/tools/Setup.exe'>点击下载</a></td></tr>";
+          s += "</table>";
+          s += "<div >"
+          document.writeln(s);
+          document.close();
+        }
+      }
+    };
+
+    mo.getZoomByExtentAndMapDiv = function (extent, divWidth) {
+      var resolutions = [
+        156543.03392800014,
+        78271.51696399994,
+        39135.75848200009,
+        19567.87924099992,
+        9783.93962049996,
+        4891.96981024998,
+        2445.98490512499,
+        1222.992452562495,
+        611.4962262813797,
+        305.74811314055756,
+        152.87405657041106,
+        76.43702828507324,
+        38.21851414253662,
+        19.10925707126831,
+        9.554628535634155,
+        4.77731426794937,
+        2.388657133974685,
+        1.1943285668550503,
+        0.5971642835598172,
+        0.29858214164761665
+      ];
+      var rangeX = extent[2] - extent[0];
+      var resolution = rangeX / divWidth;
+
+      if (resolution > resolutions[0])
+        return 0;
+      if (resolution < resolutions[resolutions.length - 1])
+        return resolutions.length - 1;
+
+      for (var i = 0; i < resolutions.length; i++) {
+        if (resolutions[i] > resolution && resolutions[i + 1] < resolution) {
+          return i;
+          break;
+        }
+      }
+
+    };
+
+    mo.get = function (_3, _4, _5, _6) {
+      return this._xhr(_3, _4, _5, "GET", _6);
+    };
+    mo.post = function (_7, _8, _9, _a) {
+      return this._xhr(_7, _8, _9, "POST", _a);
+    };
+    mo._xhr = function (_b, _c, _d, _e, _f) {
+      if (_d) {
+        _b = "proxy.jsp?" + _b;
+      }
+      return _2(_b, {
+        data: _c,
+        method: _e,
+        handleAs: _f || "json"
+      });
+    };
+    mo.request = function (url, _10, _11, _12, _13, _14) {
+      var req = new XMLHttpRequest(),
+        _15 = this;
+      req.open(_10, url, true);
+      req.timeout = 300000;
+      req.send(_11);
+      req.onload = function (e) {
+        var _16 = e.target.responseText;
+        _12.call(_15, JSON.parse(_16));
+      };
+      req.onerror = function (e) {
+        if (typeof _13 === "function") {
+          _13.call(_15, e);
+        }
+      };
+      req.onprogress = function (e) {
+        if (typeof _14 === "function" && e.lengthComputable) {
+          _14.call(_15, e);
+        }
+      };
+      return req;
+    };
+    mo.params = function () {
+      var _17 = window.location.search;
+      if (_17) {
+        _17 = _17.slice(1, _17.length);
+        var _18 = _17.split("&"),
+          obj = {},
+          _19;
+        for (var i = 0; i < _18.length; i++) {
+          _19 = _18[i].split("=");
+          obj[_19[0]] = decodeURIComponent(_19[1]);
+        }
+        return obj;
+      }
+      return null;
+    };
+    mo.base64 = function (url, _1a) {
+      if (!url) {
+        return null;
+      }
+      var img = new Image(),
+        _1b = this;
+      img.onload = function () {
+        var _1c = document.createElement("canvas");
+        _1c.width = img.width;
+        _1c.height = img.height;
+        var ctx = _1c.getContext("2d");
+        ctx.drawImage(img, 0, 0, img.width, img.height);
+        var src = _1c.toDataURL();
+        _1a.call(_1b, {
+          width: img.width,
+          height: img.height,
+          src: src
+        });
+      };
+      img.src = url;
+    };
+    mo.hex2rgb = function (hex) {
+      var hd = {
+        "0": 0,
+        "1": 1,
+        "2": 2,
+        "3": 3,
+        "4": 4,
+        "5": 5,
+        "6": 6,
+        "7": 7,
+        "8": 8,
+        "9": 9,
+        "A": 10,
+        "B": 11,
+        "C": 12,
+        "D": 13,
+        "E": 14,
+        "F": 15
+      };
+      var p = /^#[0-9A-F]{3,6}$/,
+        _1d = [];
+      if (typeof hex === "string" && p.test(hex.toUpperCase())) {
+        hex = hex.slice(1).toUpperCase();
+        if (hex.length === 3) {
+          _1d = [hd[hex[0]] * 16 + hd[hex[0]], hd[hex[1]] * 16 + hd[hex[1]], hd[hex[2]] * 16 + hd[hex[2]]];
+        } else {
+          if (hex.length === 6) {
+            _1d = [hd[hex[0]] * 16 + hd[hex[1]], hd[hex[2]] * 16 + hd[hex[3]], hd[hex[4]] * 16 + hd[hex[5]]];
+          }
+        }
+      }
+      return _1d;
+    };
+    mo.rgb2hex = function (rgb) {
+      if (rgb instanceof Array && rgb.length > 2) {
+        var hex = "#",
+          c;
+        for (var i = 0; i < 3; i++) {
+          if (typeof rgb[i] === "number" && rgb[i] >= 0 && rgb[i] <= 255) {
+            c = Math.round(rgb[i]);
+            hex += c < 16 ? ("0" + c.toString(16)) : c.toString(16);
+          } else {
+            return null;
+          }
+        }
+        return hex;
+      }
+      return null;
+    };
+    mo.isHexColor = function (hex) {
+      if (!hex) {
+        return false;
+      }
+      return /^#[0-9a-fA-F]{3,6}$/.test(hex);
+    };
+    mo.prettifyHexColor = function (hex) {
+      if (hex.length === 4) {
+        return hex[0] + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+      }
+      return hex;
+    };
+    mo.capitalize = function (s) {
+      if (s) {
+        return s.slice(0, 1).toUpperCase() + s.slice(1);
+      }
+      return "";
+    };
+    mo.camel = function (_1e) {
+      return _1e.replace(/(-[a-z])/g, function (c) {
+        return c.substr(1).toUpperCase();
+      });
+    };
+    mo.textPx = function (_1f, _20) {
+      if (!_1f) {
+        return {
+          w: 0,
+          h: 0
+        };
+      }
+      var len = this.byteLength(_1f),
+        w = Math.round(_20 / 2) + Math.floor(_20 / 30) + 3,
+        h = _20 + (_20 % 10) + 2;
+      if (w < 7) {
+        w = 7;
+      }
+      if (h < 14) {
+        h = 14;
+      }
+      return {
+        w: Math.ceil(len * w),
+        h: h
+      };
+    };
+    mo.multilinePx = function (_21, _22) {
+      var w = 0,
+        h = 0,
+        px;
+      for (var i = 0, len = _21.length; i < len; i++) {
+        px = this.textPx(_21[i], _22);
+        if (px.w > w) {
+          w = px.w;
+        }
+        h += px.h;
+      }
+      return {
+        w: w,
+        h: h
+      };
+    };
+    mo.cutString = function (s, len) {
+      var _23 = s.length,
+        _24 = this.byteLength(s),
+        r;
+      if (len >= _24 || len < 0) {
+        return s;
+      }
+      do {
+        --_23;
+        r = s.slice(0, _23);
+        _24 = this.byteLength(r);
+        if (_24 <= len) {
+          return r;
+        }
+      } while (_23 > 0);
+    };
+    mo.truncateString = function (s, len) {
+      var _25 = s.length,
+        _26 = this.byteLength(s),
+        r;
+      if (len >= _26 || len < 0) {
+        return {
+          str: s,
+          idx: _25
+        };
+      }
+      do {
+        --_25;
+        r = s.slice(0, _25);
+        _26 = this.byteLength(r);
+        if (_26 <= len) {
+          return {
+            str: r,
+            idx: _25
+          };
+        }
+      } while (_25 > 0);
+    };
+    mo.padString = function (s, len) {
+      var _27 = this.byteLength(s),
+        _28 = "..",
+        _29 = s;
+      if (_27 > len) {
+        _29 = this.cutString(s, len - _28.length) + _28;
+      }
+      return _29;
+    };
+    mo.byteLength = function (s) {
+      return (s || "").toString().trim().replace(/[^\x00-\xff]/g, "**").length;
+    };
+    mo.prettify = function (num, len) {
+      if (!len && len !== 0) {
+        len = 3;
+      }
+      var _2a = Math.pow(10, len);
+      return Math.round(num * _2a) / _2a;
+    };
+    mo.add = function (a, b) {
+      var r1, r2, m;
+      try {
+        r1 = a.toString().split(".")[1].length;
+      } catch (e) {
+        r1 = 0;
+      }
+      try {
+        r2 = b.toString().split(".")[1].length;
+      } catch (e) {
+        r2 = 0;
+      }
+      m = Math.pow(10, Math.max(r1, r2));
+      return (a * m + b * m) / m;
+    };
+    mo.sub = function (a, b) {
+      var r1, r2, m;
+      try {
+        r1 = a.toString().split(".")[1].length;
+      } catch (e) {
+        r1 = 0;
+      }
+      try {
+        r2 = b.toString().split(".")[1].length;
+      } catch (e) {
+        r2 = 0;
+      }
+      m = Math.pow(10, Math.max(r1, r2));
+      return (a * m - b * m) / m;
+    };
+    mo.checkExt = function (_2b, ext) {
+      if (!_2b) {
+        return false;
+      }
+      var _2c = _2b.name,
+        e = _2c.slice(_2c.lastIndexOf(".") + 1);
+      return e && e.toLowerCase() === ext;
+    };
+    mo.parseCSV = function (_2d) {
+      if (!_2d) {
+        return null;
+      }
+      var _2e = _2d.split("\n");
+      if (!_2e || _2e.length < 2) {
+        return null;
+      }
+      var _2f = _2e.shift().split(","),
+        _30 = [],
+        _31;
+      for (var k = 0; k < _2f.length; k++) {
+        _2f[k] = _2f[k].trim().replace("\n", "").replace("\r", "");
+        if (_2f[k] === "") {
+          return {
+            fields: null
+          };
+        }
+      }
+      for (var i = 0, len = _2e.length; i < len; i++) {
+        _31 = _2e[i].trim().replace("\r", "");
+        if (_31.replace(/,/g, "") === "") {
+          continue;
+        }
+        var _32 = _31.split(","),
+          row = {};
+        for (var j = 0; j < _2f.length; j++) {
+          var _33 = _32[j];
+          if (!_33) {
+            _33 = "";
+          }
+          row[_2f[j]] = _33.trim();
+        }
+        _30.push(row);
+      }
+      return {
+        fields: _2f,
+        rows: _30
+      };
+    };
+    mo.getFileName = function (_34) {
+      if (_34) {
+        return _34.slice(0, _34.lastIndexOf("."));
+      }
+      return _34;
+    };
+    mo.validEmail = function (_35) {
+      var reg = /^[\w-]+(\.[\w-]+)*@[\w-]+(\.\w+)*(\.[A-Za-z]{2,})$/;
+      return reg.test(_35);
+    };
+    mo.isLink = function (_36) {
+      return /^https?:\/{2}/.test(_36);
+    };
+    mo.toLink = function (_37) {
+      return "<a href=\"" + _37 + "\" target=\"_blank\">" + _37 + "</a>";
+    };
+    mo.isNumberKey = function (_38) {
+      return _38 > 47 && _38 < 58;
+    };
+    mo.validNumberKey = function (_39) {
+      var _3a = [8, 37, 39, 46, 116, 190];
+      return this.isNumberKey(_39) || _3a.indexOf(_39) > -1;
+    };
+    mo.hasProperty = function (obj) {
+      for (var i in obj) {
+        if (obj.hasOwnProperty(i)) {
+          return true;
+        }
+      }
+      return false;
+    };
+    mo.sameItems = function (_3b, _3c) {
+      if (!_3b instanceof Array || !_3c instanceof Array) {
+        return false;
+      }
+      return _3b.length === _3c.length && this.containItems(_3b, _3c);
+    };
+    mo.containItems = function (_3d, _3e) {
+      for (var i = 0, len = _3e.length; i < len; i++) {
+        if (_3d.indexOf(_3e[i]) < 0) {
+          return false;
+        }
+      }
+      return true;
+    };
+    mo.removeItem = function (_3f, _40) {
+      if (!_3f instanceof Array) {
+        return;
+      }
+      for (var i = 0, len = _3f.length; i < len; i++) {
+        if (_3f[i] === _40) {
+          _3f.splice(i, 1);
+          break;
+        }
+      }
+    };
+    mo.duplicateItem = function (_41) {
+      if (!_41 instanceof Array) {
+        return false;
+      }
+      var dic = {};
+      for (var i = 0, len = _41.length; i < len; i++) {
+        if (dic[_41[i]]) {
+          return true;
+        }
+        dic[_41[i]] = 1;
+      }
+      return false;
+    };
+    mo.requestAnim = function (_42, _43) {
+      return window.setTimeout(_42, _43);
+    };
+    mo.clearAnim = function (id) {
+      window.clearTimeout(id);
+    };
+    mo.timestamp = function () {
+      var d = new Date(),
+        _44 = d.getMonth() + 1,
+        day = d.getDate(),
+        _45 = [],
+        _46 = [];
+      _45.push(d.getFullYear());
+      _45.push(_44 > 9 ? _44 : "0" + _44);
+      _45.push(day > 9 ? day : "0" + day);
+      _46.push(d.getHours());
+      _46.push(d.getMinutes());
+      _46.push(d.getSeconds());
+      return _45.join("-") + " " + _46.join(":");
+    };
+    mo.time2num = function (_47) {
+      if (!_47) {
+        return 0;
+      }
+      return _47.replace(/[- :]/g, "");
+    };
+    mo.uuid = function () {
+      var _48 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".split(""),
+        _49 = [],
+        rnd = 0,
+        r;
+      for (var i = 0; i < 36; i++) {
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+          _49[i] = "-";
+        } else {
+          if (i == 14) {
+            _49[i] = "4";
+          } else {
+            if (rnd <= 2) {
+              rnd = 33554432 + (Math.random() * 16777216) | 0;
+            }
+            r = rnd & 15;
+            rnd = rnd >> 4;
+            _49[i] = _48[(i == 19) ? (r & 3) | 8 : r];
+          }
+        }
+      }
+      return _49.join("").toLowerCase();
+    };
+    mo.fire = function (_4a, _4b, _4c) {
+      if (_4a.dispatchEvent && document.createEvent) {
+        if (L.Browser.gecko) {
+          var e = document.createEvent("MouseEvents");
+          e.initMouseEvent("click", !!_4c.bubbles, !!_4c.cancelable, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
+          return _4a.dispatchEvent(e);
+        } else {
+          var _4d = _4a.ownerDocument || document;
+          var _4e = _4d.createEvent("HTMLEvents");
+          _4e.initEvent(_4b, !!_4c.bubbles, !!_4c.cancelable);
+          for (var i in _4c) {
+            if (!(i in _4e)) {
+              _4e[i] = _4c[i];
+            }
+          }
+          return _4a.dispatchEvent(_4e) && _4e;
+        }
+      }
+    };
+    mo.JenksNaturalBreaks = function (_4f, _50) {
+      var len = _4f.length,
+        _51 = [],
+        _52 = [];
+      _50 = _50 > len ? len : _50;
+      for (var i = 0; i <= len; i++) {
+        var _53 = [],
+          _54 = [];
+        for (var j = 0; j <= _50; j++) {
+          _53.push(0);
+          _54.push(0);
+        }
+        _51.push(_53);
+        _52.push(_54);
+      }
+      for (var i = 1; i <= _50; i++) {
+        _51[1][i] = 1;
+        _52[1][i] = 0;
+        for (var j = 2; j <= len; j++) {
+          _52[j][i] = Infinity;
+        }
+      }
+      var v = 0;
+      for (var l = 2; l <= len; l++) {
+        var s1 = 0,
+          s2 = 0,
+          w = 0;
+        for (var m = 1; m <= l; m++) {
+          var i3 = l - m + 1;
+          var val = parseFloat(_4f[i3 - 1]);
+          s2 += val * val;
+          s1 += val;
+          w += 1;
+          v = s2 - (s1 * s1) / w;
+          var i4 = i3 - 1;
+          if (i4 != 0) {
+            for (var j = 2; j <= _50; j++) {
+              if (_52[l][j] >= (v + _52[i4][j - 1])) {
+                _51[l][j] = i3;
+                _52[l][j] = v + _52[i4][j - 1];
+              }
+            }
+          }
+        }
+        _51[l][1] = 1;
+        _52[l][1] = v;
+      }
+      var k = len,
+        _55 = [];
+      for (var j = 0; j <= _50; j++) {
+        _55.push(0);
+      }
+      _55[_50] = parseFloat(_4f[len - 1]);
+      _55[0] = parseFloat(_4f[0]);
+      var c = _50;
+      while (c >= 2) {
+        var id = parseInt((_51[k][c]) - 2);
+        if (id < 0) {
+          id = 0;
+        }
+        _55[c - 1] = _4f[id];
+        k = parseInt((_51[k][c] - 1));
+        c -= 1;
+      }
+      return _55;
+    };
+    mo.offset = function (lat, lon) {
+      var a = 6378245;
+      var ee = 0.006693421622965943;
+      var _56 = this._lat(lon - 105, lat - 35);
+      var _57 = this._lon(lon - 105, lat - 35);
+      var _58 = lat / 180 * Math.PI;
+      var _59 = Math.sin(_58);
+      _59 = 1 - ee * _59 * _59;
+      var _5a = Math.sqrt(_59);
+      _56 = (_56 * 180) / ((a * (1 - ee)) / (_59 * _5a) * Math.PI);
+      _57 = (_57 * 180) / (a / _5a * Math.cos(_58) * Math.PI);
+      return [lat + _56, lon + _57];
+    };
+    mo._lon = function (x, y) {
+      var ret = 300 + x + 2 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+      ret += (20 * Math.sin(6 * x * Math.PI) + 20 * Math.sin(2 * x * Math.PI)) * 2 / 3;
+      ret += (20 * Math.sin(x * Math.PI) + 40 * Math.sin(x / 3 * Math.PI)) * 2 / 3;
+      ret += (150 * Math.sin(x / 12 * Math.PI) + 300 * Math.sin(x / 30 * Math.PI)) * 2 / 3;
+      return ret;
+    };
+    mo._lat = function (x, y) {
+      var ret = -100 + 2 * x + 3 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+      ret += (20 * Math.sin(6 * x * Math.PI) + 20 * Math.sin(2 * x * Math.PI)) * 2 / 3;
+      ret += (20 * Math.sin(y * Math.PI) + 40 * Math.sin(y / 3 * Math.PI)) * 2 / 3;
+      ret += (160 * Math.sin(y / 12 * Math.PI) + 320 * Math.sin(y * Math.PI / 30)) * 2 / 3;
+      return ret;
+    },
+
+      mo.makeColor = function (hex, _76) {
+        if (hex === "transparent" || hex === "") {
+          return "rgba(0, 0, 0, 0)";
+        }
+        var rgb = this.hex2rgb(hex);
+        return "rgba(" + rgb.concat(_76 / 100).join(",") + ")";
+      }
+    return mo;
+  });

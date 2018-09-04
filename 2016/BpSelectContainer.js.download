@@ -1,0 +1,86 @@
+/**
+ * Created by zwn on 2016/5/17.
+ */
+
+define([
+  'dojo/_base/declare',
+  'dijit/_WidgetBase',
+  'dojo/_base/lang',
+  'dojo/_base/array',
+  'dojo/on',
+  'dojo/query',
+  "dojo/dom-construct",
+  "dojo/dom-attr",
+  'dojo/dom',
+  'dojo/dom-class',
+  'dojo/Evented',
+  './BpSingleSelect'
+],function(
+  declare,
+  _WidgetBase,
+  lang,
+  array,
+  on,
+  query,
+  domConstruct,
+  domAttr,
+  dom,
+  domClass,
+  Evented,
+  BpSingleSelect){
+  return declare([_WidgetBase,Evented],{
+    options:[],//
+    'class':"bplz-BpSingleContainer",
+    selectNames:[],
+    containers:[],
+    name:"",
+    title:"",
+
+    postCreate:function(){
+      this.inherited(arguments);
+    },
+    startup:function(){
+      this.inherited(arguments);
+      this.containers[this.name]=[];
+      this._createContainer();
+    },
+    _createContainer:function(){
+      var lineCount=Math.ceil(this.options.length/3);
+      var height=30+30*(lineCount);
+      var mainContainer = domConstruct.create('div',{
+        "class":"mainContainer",
+        style:{
+          "height":height+"px"
+        }
+      },this.domNode);
+      var titleContainer=domConstruct.create('div',{
+        "class":"titleContainer"
+      },mainContainer);
+      domConstruct.create('div',{
+        "class":"title",
+        innerHTML:this.title
+      },titleContainer);
+      var dataContainer = domConstruct.create('div',{
+        style:{
+          "width":"100%",
+          "height":30*(lineCount)+"px"
+        }
+      },mainContainer);
+      var Select = new BpSingleSelect({
+        options:this.options,
+        name:this.name
+      });
+      Select.startup();
+      domConstruct.place(Select.domNode, dataContainer);
+      this.value=Select.value;
+      on(Select,'click',lang.hitch(this,function(value){
+        if(value!=null){
+          this.value=value;
+          this.emit('click',value);
+        }
+      }));
+
+    },
+
+  });
+});

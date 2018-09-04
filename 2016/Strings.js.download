@@ -1,0 +1,25 @@
+define({
+    root: ({
+        placeholders: {
+            username: "用户名",
+            password: "密码"
+        },
+
+        button: {
+            title: "登陆",
+            titleLoginAttempt: "正在验证..."
+        },
+
+        error: {
+            invalidUsername: "用户名错误",
+            invalidUsernameOrPassword: "用户名或密码错误",
+            invalidPassword: "密码错误"
+        }
+    }),
+
+    es: true,
+    it: true,
+    ru: true,
+    tr: true,
+    "zh-CN": true
+});

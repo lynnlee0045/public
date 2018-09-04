@@ -1,0 +1,72 @@
+/**
+ * Author: BpKm <kangming310@sina.com>
+ * Date:   2014/11/20
+ * Fun :  后台查询基类
+ */
+
+define([
+  "dojo/_base/declare",
+  "dojo/promise/all",
+  'dojo/json'
+], function (declare, all,json) {
+  return declare(null, {
+    // instance properties
+    url: null,
+    proxyURL: null,
+    disableClientCaching: false,
+
+    constructor: function (args) {
+      this.url = args.url;
+      this.proxyURL = args.proxyURL;
+      this.disableClientCaching = args.disableClientCaching;
+    },
+
+    sendRestRequest: function (inputParams, appendURL, successCallBack, errorCallBack) {
+      var requestUrl = (this.proxyURL) ? this.proxyURL + "?" + this.url : this.url;
+      requestUrl += appendURL;
+      var xhrArgs = {
+        url: requestUrl,
+        content: inputParams,
+        preventCache: this.disableClientCaching,
+        handleAs: "json",
+        load: function (data) {
+          successCallBack(data);
+        },
+        error: function (error) {
+          errorCallBack(error);
+        }
+      };
+      var deferred = dojo.xhrGet(xhrArgs);
+    },
+
+    getRestRequestDeferred: function (inputParams, appendURL) {
+      var requestUrl = (this.proxyURL) ? this.proxyURL + "?" + this.url : this.url;
+      requestUrl += appendURL;
+      var xhrArgs = {
+        url: requestUrl,
+        content: inputParams,
+        preventCache: this.disableClientCaching,
+        handleAs: "json"
+      };
+      return dojo.xhrGet(xhrArgs);
+    },
+
+    getPostRestRequestDeferred: function (inputParams, appendURL) {
+      var requestUrl = (this.proxyURL) ? this.proxyURL + "?" + this.url : this.url;
+      requestUrl += appendURL;
+      var xhrArgs = {
+        url: requestUrl,
+        postData:json.stringify(inputParams),
+        preventCache: this.disableClientCaching,
+        contentType:"application/json",
+        handleAs: "json"
+      };
+      return dojo.xhrPost(xhrArgs);
+    },
+
+    getMoreRequest: function (deferreds) {
+      var promises = new all(deferreds);
+      return promises;
+    }
+  });
+})
