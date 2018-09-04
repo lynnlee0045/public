@@ -106,6 +106,7 @@ option = {
             },
             label: {
                 normal: {
+                    position: 'inner',
                     textStyle: {
                         fontSize: 24,
                         fontWeight: 'bolder',

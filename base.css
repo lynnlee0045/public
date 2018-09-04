@@ -105,10 +105,9 @@ a {
 }
 
 .chartDescription {
-    width: 100%;
     font-size: 48px;
     font-weight: bold;
     color: #fff;
+    margin: auto;
     text-align: left;
-    padding: 150px 300px 0 300px;
 }
